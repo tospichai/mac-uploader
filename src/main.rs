@@ -3,6 +3,7 @@ mod file_watcher;
 mod upload_queue;
 mod api_client;
 mod upload_manager;
+mod ui_theme;
 
 use eframe::egui;
 use std::env;
@@ -14,7 +15,11 @@ fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Initialize logger
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([800.0, 600.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([550.0, 650.0])
+            .with_resizable(false)
+            .with_decorations(true)   // Restore title bar and borders
+            .with_transparent(true),  // Allow transparent background for seamless look
         ..Default::default()
     };
 
