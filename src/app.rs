@@ -407,7 +407,7 @@ impl MacUploaderApp {
                     let mut manager = manager_clone.lock().await;
                     manager.stop();
                     if let Some(sender) = log_sender {
-                        let _ = sender.send("⏹ Upload manager stopped".to_string());
+                        let _ = sender.send("Upload manager stopped".to_string());
                     }
                 });
             }
@@ -415,7 +415,7 @@ impl MacUploaderApp {
 
         // Drop the file watcher to stop it
         self.file_watcher = None;
-        self.logs.push("⏹ File watching stopped".to_string());
+        self.logs.push("File watching stopped".to_string());
 
         // Set the watching state to false
         self.is_watching = false;
@@ -529,196 +529,232 @@ impl MacUploaderApp {
     fn show_configuration(&mut self, ui: &mut egui::Ui) {
         let frame = self.theme.card_frame_borderless();
         frame.show(ui, |ui| {
-            ui.vertical(|ui| {
-                // Section title
-                ui.label(
-                    egui::RichText::new("Configuration")
-                        .size(18.0)
-                        .strong()
-                        .color(self.theme.text_primary),
-                );
-                ui.add_space(self.theme.spacing_medium);
+            ui.scope(|ui| {
+                // กำหนดสีพื้นหลัง TextEdit
+                ui.style_mut().visuals.widgets.inactive.bg_fill =
+                    self.theme.background; // พื้นหลังสีเทาเข้มอมฟ้า
+                ui.style_mut().visuals.widgets.hovered.bg_fill =
+                    egui::Color32::from_rgb(50, 50, 70); // สีเมื่อเมาส์ชี้
+                ui.style_mut().visuals.widgets.active.bg_fill = egui::Color32::from_rgb(60, 60, 90); // สีเมื่อถูกโฟกัส
 
-                // Calculate label width based on longest label
-                let labels = ["API Endpoint", "API Key", "Event Code", "Watch Folder"];
-                let label_width = labels
-                    .iter()
-                    .map(|label| label.len() as f32 * 8.0) // Approximate width based on character count
-                    .fold(0.0, f32::max)
-                    + 20.0; // Add some padding
+                // กำหนดสีตัวอักษร
+                ui.style_mut().visuals.widgets.inactive.fg_stroke.color = egui::Color32::WHITE; // ตัวอักษรสีขาว
+                ui.style_mut().visuals.widgets.active.fg_stroke.color = self.theme.accent; // ตัวอักษรสีเหลืองเมื่อถูกโฟกัส
 
-                // Two-column layout for form fields
+                // กำหนดสีเมื่อเลือกข้อความ (Selection)
+                ui.style_mut().visuals.selection.bg_fill = egui::Color32::from_rgb(100, 100, 150);
+                ui.style_mut().visuals.selection.stroke.color = self.theme.accent;
                 ui.vertical(|ui| {
-                    // API Endpoint
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [label_width, 24.0],
-                            egui::Label::new(
-                                egui::RichText::new("API Endpoint")
-                                    .size(14.0)
-                                    .color(self.theme.text_secondary),
-                            ),
-                        );
-                        ui.add_sized(
-                            [ui.available_width(), 24.0],
-                            egui::TextEdit::singleline(&mut self.api_endpoint)
-                                .font(egui::TextStyle::Body)
-                                .margin(egui::Vec2::new(8.0, 4.0)),
-                        );
-                    });
+                    // Section title
+                    ui.label(
+                        egui::RichText::new("Configuration")
+                            .size(18.0)
+                            .strong()
+                            .color(self.theme.text_primary),
+                    );
                     ui.add_space(self.theme.spacing_medium);
 
-                    // API Key
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [label_width, 24.0],
-                            egui::Label::new(
-                                egui::RichText::new("API Key")
-                                    .size(14.0)
-                                    .color(self.theme.text_secondary),
-                            ),
-                        );
+                    // Calculate label width based on longest label
+                    let labels = ["API Endpoint", "API Key", "Event Code", "Watch Folder"];
+                    let label_width = labels
+                        .iter()
+                        .map(|label| label.len() as f32 * 8.0) // Approximate width based on character count
+                        .fold(0.0, f32::max)
+                        + 20.0; // Add some padding
+
+                    // Two-column layout for form fields
+
+                    ui.vertical(|ui| {
+                        // API Endpoint
                         ui.horizontal(|ui| {
-                            if self.show_api_key {
-                                ui.add_sized(
-                                    [ui.available_width() - 80.0, 24.0],
-                                    egui::TextEdit::singleline(&mut self.api_key)
-                                        .font(egui::TextStyle::Body)
-                                        .margin(egui::Vec2::new(8.0, 4.0)),
-                                );
-                            } else {
-                                let masked = "*".repeat(self.api_key.len().min(20));
-                                ui.add_sized(
-                                    [ui.available_width() - 80.0, 24.0],
-                                    egui::Label::new(
-                                        egui::RichText::new(masked).color(self.theme.text_muted),
-                                    ),
-                                );
-                            }
-
-                            if ui
-                                .add_sized(
-                                    [70.0, 24.0],
-                                    egui::Button::new(
-                                        egui::RichText::new(if self.show_api_key {
-                                            "Hide"
-                                        } else {
-                                            "Show"
-                                        })
-                                        .size(12.0)
-                                        .color(self.theme.text_primary),
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                self.show_api_key = !self.show_api_key;
-                            }
-                        });
-                    });
-                    ui.add_space(self.theme.spacing_medium);
-
-                    // Event Code
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [label_width, 24.0],
-                            egui::Label::new(
-                                egui::RichText::new("Event Code")
-                                    .size(14.0)
-                                    .color(self.theme.text_secondary),
-                            ),
-                        );
-                        ui.add_sized(
-                            [ui.available_width(), 24.0],
-                            egui::TextEdit::singleline(&mut self.event_code)
-                                .font(egui::TextStyle::Body)
-                                .margin(egui::Vec2::new(8.0, 4.0)),
-                        );
-                    });
-                    ui.add_space(self.theme.spacing_medium);
-
-                    // Watch Folder
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [label_width, 24.0],
-                            egui::Label::new(
-                                egui::RichText::new("Watch Folder")
-                                    .size(14.0)
-                                    .color(self.theme.text_secondary),
-                            ),
-                        );
-                        ui.horizontal(|ui| {
-                            let folder_text = if let Some(ref folder) = self.watch_folder {
-                                folder.display().to_string()
-                            } else {
-                                "No folder selected".to_string()
-                            };
-
                             ui.add_sized(
-                                [ui.available_width() - 120.0, 24.0],
+                                [label_width, 24.0],
                                 egui::Label::new(
-                                    egui::RichText::new(folder_text).color(self.theme.text_primary),
+                                    egui::RichText::new("API Endpoint")
+                                        .size(14.0)
+                                        .color(self.theme.text_secondary),
+                                ),
+                            );
+                            ui.add_sized(
+                                [ui.available_width(), 24.0],
+                                egui::TextEdit::singleline(&mut self.api_endpoint)
+                                    .font(egui::TextStyle::Body)
+                                    .margin(egui::Vec2::new(8.0, 4.0)),
+                            );
+                        });
+                        ui.add_space(self.theme.spacing_medium);
+
+                        // API Key
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [label_width, 24.0],
+                                egui::Label::new(
+                                    egui::RichText::new("API Key")
+                                        .size(14.0)
+                                        .color(self.theme.text_secondary),
+                                ),
+                            );
+                            ui.horizontal(|ui| {
+                                if self.show_api_key {
+                                    ui.add_sized(
+                                        [ui.available_width() - 80.0, 24.0],
+                                        egui::TextEdit::singleline(&mut self.api_key)
+                                            .font(egui::TextStyle::Body)
+                                            .margin(egui::Vec2::new(8.0, 4.0)),
+                                    );
+                                } else {
+                                    let masked = "*".repeat(self.api_key.len().min(20));
+                                    ui.add_sized(
+                                        [ui.available_width() - 80.0, 24.0],
+                                        egui::Label::new(
+                                            egui::RichText::new(masked)
+                                                .color(self.theme.text_muted),
+                                        ),
+                                    );
+                                }
+
+                                if ui
+                                    .add_sized(
+                                        [70.0, 24.0],
+                                        egui::Button::new(
+                                            egui::RichText::new(if self.show_api_key {
+                                                "Hide"
+                                            } else {
+                                                "Show"
+                                            })
+                                            .size(12.0)
+                                            .color(self.theme.text_primary),
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    self.show_api_key = !self.show_api_key;
+                                }
+                            });
+                        });
+                        ui.add_space(self.theme.spacing_medium);
+
+                        // Event Code
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [label_width, 24.0],
+                                egui::Label::new(
+                                    egui::RichText::new("Event Code")
+                                        .size(14.0)
+                                        .color(self.theme.text_secondary),
+                                ),
+                            );
+                            ui.add_sized(
+                                [ui.available_width(), 24.0],
+                                egui::TextEdit::singleline(&mut self.event_code)
+                                    .font(egui::TextStyle::Body)
+                                    .margin(egui::Vec2::new(8.0, 4.0)),
+                            );
+                        });
+                        ui.add_space(self.theme.spacing_medium);
+
+                        // Watch Folder
+                        ui.horizontal(|ui| {
+                            // label ซ้ายคำว่า "Watch Folder"
+                            ui.add_sized(
+                                [label_width, 24.0],
+                                egui::Label::new(
+                                    egui::RichText::new("Watch Folder")
+                                        .size(14.0)
+                                        .color(self.theme.text_secondary),
                                 ),
                             );
 
+                            ui.horizontal(|ui| {
+                                // แปลง path เป็น string ก่อน
+                                let raw_folder_text = if let Some(ref folder) = self.watch_folder {
+                                    folder.display().to_string()
+                                } else {
+                                    "No folder selected".to_string()
+                                };
+
+                                // จำกัดจำนวนตัวอักษร แล้วใส่ "..." ด้านหน้า ถ้ายาวเกิน
+                                // ปรับ 40 ได้ตามใจว่าอยากให้แสดงกี่ตัวอักษรท้ายสุด
+                                let folder_text =
+                                    Self::shorten_with_front_ellipsis(&raw_folder_text, 38);
+
+                                // พื้นที่สำหรับแสดง path
+                                let label_width = ui.available_width() - 120.0;
+
+                                ui.add_sized(
+                                    [label_width, 24.0],
+                                    egui::Label::new(
+                                        egui::RichText::new(folder_text)
+                                            .color(self.theme.text_primary),
+                                    )
+                                    .truncate() // กันไม่ให้เกินพื้นที่ (เผื่อ font กว้าง)
+                                    .wrap(), // ไม่ให้ขึ้นหลายบรรทัด
+                                );
+
+                                // ปุ่ม Select Folder
+                                if ui
+                                    .add_sized(
+                                        [110.0, 24.0],
+                                        egui::Button::new(
+                                            egui::RichText::new("Select Folder")
+                                                .size(12.0)
+                                                .color(self.theme.text_primary),
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    self.select_folder();
+                                }
+                            });
+                        });
+
+                        ui.add_space(self.theme.spacing_medium);
+
+                        // Connection status and test button
+                        ui.horizontal(|ui| {
                             if ui
                                 .add_sized(
-                                    [110.0, 24.0],
+                                    [120.0, 25.0],
                                     egui::Button::new(
-                                        egui::RichText::new("Select Folder")
-                                            .size(12.0)
+                                        egui::RichText::new("Test Connection")
+                                            .size(14.0)
                                             .color(self.theme.text_primary),
                                     ),
                                 )
                                 .clicked()
                             {
-                                self.select_folder();
+                                self.test_connection();
+                            }
+
+                            ui.add_space(self.theme.spacing_small);
+
+                            match &self.connection_status {
+                                ConnectionStatus::NotTested => {
+                                    ui.label(
+                                        egui::RichText::new("Not tested")
+                                            .color(self.theme.text_muted),
+                                    );
+                                }
+                                ConnectionStatus::Testing => {
+                                    ui.spinner();
+                                    ui.label(
+                                        egui::RichText::new("Testing...").color(self.theme.text_muted),
+                                    );
+                                }
+                                ConnectionStatus::Connected => {
+                                    ui.label(
+                                        egui::RichText::new("✅ Connected")
+                                            .color(self.theme.success),
+                                    );
+                                }
+                                ConnectionStatus::Failed(msg) => {
+                                    ui.label(
+                                        egui::RichText::new(format!("❌ {}", msg))
+                                            .color(self.theme.error),
+                                    );
+                                }
                             }
                         });
-                    });
-                    ui.add_space(self.theme.spacing_medium);
-
-                    // Connection status and test button
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_sized(
-                                [120.0, 25.0],
-                                egui::Button::new(
-                                    egui::RichText::new("Test Connection")
-                                        .size(14.0)
-                                        .color(self.theme.text_primary),
-                                ),
-                            )
-                            .clicked()
-                        {
-                            self.test_connection();
-                        }
-
-                        ui.add_space(self.theme.spacing_small);
-
-                        match &self.connection_status {
-                            ConnectionStatus::NotTested => {
-                                ui.label(
-                                    egui::RichText::new("Not tested").color(self.theme.text_muted),
-                                );
-                            }
-                            ConnectionStatus::Testing => {
-                                ui.spinner();
-                                ui.label(
-                                    egui::RichText::new("Testing...").color(self.theme.warning),
-                                );
-                            }
-                            ConnectionStatus::Connected => {
-                                ui.label(
-                                    egui::RichText::new("✅ Connected").color(self.theme.success),
-                                );
-                            }
-                            ConnectionStatus::Failed(msg) => {
-                                ui.label(
-                                    egui::RichText::new(format!("❌ {}", msg))
-                                        .color(self.theme.error),
-                                );
-                            }
-                        }
                     });
                 });
             });
@@ -812,26 +848,26 @@ impl MacUploaderApp {
     }
 
     fn show_upload_queue_panel(&mut self, ui: &mut egui::Ui) {
-        let frame = self.theme.card_frame();
+        let frame = self.theme.card_frame_borderless();
         frame.show(ui, |ui| {
             ui.vertical(|ui| {
                 // Section title
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Upload Queue")
-                            .size(18.0)
-                            .color(self.theme.text_primary),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Ok(queue) = self.upload_queue.try_lock() {
-                            let stats = queue.get_stats();
-                            ui.label(
-                                egui::RichText::new(format!("{} total", stats.total))
-                                    .size(14.0)
-                                    .color(self.theme.text_muted),
-                            );
-                        }
-                    });
+                    // ui.label(
+                    //     egui::RichText::new("Upload Queue")
+                    //         .size(18.0)
+                    //         .color(self.theme.text_primary),
+                    // );
+                    // ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    //     if let Ok(queue) = self.upload_queue.try_lock() {
+                    //         let stats = queue.get_stats();
+                    //         ui.label(
+                    //             egui::RichText::new(format!("{} total", stats.total))
+                    //                 .size(14.0)
+                    //                 .color(self.theme.text_muted),
+                    //         );
+                    //     }
+                    // });
                 });
                 ui.add_space(self.theme.spacing_medium);
 
@@ -1006,7 +1042,7 @@ impl MacUploaderApp {
     }
 
     fn show_logs_panel(&mut self, ui: &mut egui::Ui) {
-        let frame = self.theme.card_frame();
+        let frame = self.theme.card_frame_borderless();
         frame.show(ui, |ui| {
             // Use all available height
             ui.allocate_ui_with_layout(
@@ -1014,12 +1050,20 @@ impl MacUploaderApp {
                 egui::Layout::top_down(egui::Align::LEFT),
                 |ui| {
                     // Section title
+                    let header_frame = egui::Frame::none().inner_margin(egui::Margin::symmetric(
+                        self.theme.spacing_extra_large,
+                        self.theme.spacing_small,
+                    ));
+
                     ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new("Logs")
-                                .size(18.0)
-                                .color(self.theme.text_primary),
-                        );
+                        header_frame.show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("Logs")
+                                    .size(18.0)
+                                    .strong()
+                                    .color(self.theme.text_primary),
+                            );
+                        });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.new_logs_count > 0 {
                                 ui.label(
@@ -1076,5 +1120,18 @@ impl MacUploaderApp {
                 },
             );
         });
+    }
+
+    fn shorten_with_front_ellipsis(text: &str, max_chars: usize) -> String {
+        let char_count = text.chars().count();
+        if char_count <= max_chars {
+            return text.to_string();
+        }
+
+        let mut chars: Vec<char> = text.chars().collect();
+        let start = char_count.saturating_sub(max_chars);
+        let tail: String = chars[start..].iter().collect();
+
+        format!("...{}", tail)
     }
 }
