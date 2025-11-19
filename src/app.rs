@@ -104,7 +104,10 @@ impl MacUploaderApp {
                         if let Err(e) = std::fs::copy(&old_config_path, &config_path) {
                             eprintln!("Failed to migrate config: {}", e);
                         } else {
-                            println!("Migrated config from {:?} to {:?}", old_config_path, config_path);
+                            println!(
+                                "Migrated config from {:?} to {:?}",
+                                old_config_path, config_path
+                            );
                         }
                     }
                     None => {
@@ -535,16 +538,19 @@ impl eframe::App for MacUploaderApp {
         }
 
         // Check if API endpoint or API key has changed and reset connection status
-        if self.api_endpoint != self.previous_api_endpoint || self.api_key != self.previous_api_key {
+        if self.api_endpoint != self.previous_api_endpoint || self.api_key != self.previous_api_key
+        {
             // If currently watching, stop it first
             if self.is_watching {
                 self.stop_watching();
-                self.logs.push("⚠️ Stopped watching due to API settings change".to_string());
+                self.logs
+                    .push("⚠️ Stopped watching due to API settings change".to_string());
             }
 
             // Reset connection status to NotTested
             self.connection_status = ConnectionStatus::NotTested;
-            self.logs.push("🔄 Connection status reset - please test connection again".to_string());
+            self.logs
+                .push("🔄 Connection status reset - please test connection again".to_string());
 
             // Update previous values to current values
             self.previous_api_endpoint = self.api_endpoint.clone();
@@ -694,49 +700,61 @@ impl MacUploaderApp {
                                         .color(self.theme.text_secondary),
                                 ),
                             );
-                            ui.horizontal(|ui| {
-                                if self.show_api_key {
-                                    ui.add_sized(
-                                        [ui.available_width() - 80.0, 24.0],
-                                        egui::TextEdit::singleline(&mut self.api_key)
-                                            .font(egui::TextStyle::Body)
-                                            .margin(egui::Vec2::new(8.0, 4.0))
-                                            .hint_text(API_KEY_PLACEHOLDER),
-                                    );
-                                } else {
-                                    let display_text = if self.api_key.is_empty() {
-                                        API_KEY_PLACEHOLDER.to_string()
-                                    } else {
-                                        "*".repeat(self.api_key.len().min(20))
-                                    };
-                                    ui.add_sized(
-                                        [ui.available_width() - 80.0, 24.0],
-                                        egui::Label::new(
-                                            egui::RichText::new(display_text)
-                                                .color(self.theme.text_muted),
-                                        ),
-                                    );
-                                }
 
-                                if ui
-                                    .add_sized(
-                                        [70.0, 24.0],
-                                        egui::Button::new(
-                                            egui::RichText::new(if self.show_api_key {
-                                                "Hide"
-                                            } else {
-                                                "Show"
-                                            })
-                                            .size(12.0)
-                                            .color(self.theme.text_primary),
-                                        ),
-                                    )
-                                    .clicked()
-                                {
-                                    self.show_api_key = !self.show_api_key;
-                                }
-                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let button_clicked = ui
+                                        .add_sized(
+                                            [70.0, 24.0],
+                                            egui::Button::new(
+                                                egui::RichText::new(if self.show_api_key {
+                                                    "Hide"
+                                                } else {
+                                                    "Show"
+                                                })
+                                                .size(12.0)
+                                                .color(self.theme.text_primary),
+                                            ),
+                                        )
+                                        .clicked();
+
+                                    if button_clicked {
+                                        self.show_api_key = !self.show_api_key;
+                                    }
+
+                                    let input_width = ui.available_width();
+
+                                    if self.show_api_key {
+                                        ui.add_sized(
+                                            [input_width, 24.0],
+                                            egui::TextEdit::singleline(&mut self.api_key)
+                                                .font(egui::TextStyle::Body)
+                                                .margin(egui::Vec2::new(8.0, 4.0))
+                                                .hint_text(API_KEY_PLACEHOLDER),
+                                        );
+                                    } else {
+                                        let display_text = if self.api_key.is_empty() {
+                                            API_KEY_PLACEHOLDER.to_string()
+                                        } else {
+                                            "*".repeat(12)
+                                        };
+
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(input_width, 24.0),
+                                            egui::Layout::left_to_right(egui::Align::Min),
+                                            |ui| {
+                                                ui.label(
+                                                    egui::RichText::new(display_text)
+                                                        .color(self.theme.text_muted),
+                                                );
+                                            },
+                                        );
+                                    }
+                                },
+                            );
                         });
+
                         ui.add_space(self.theme.spacing_medium);
 
                         // Event Code
@@ -856,9 +874,13 @@ impl MacUploaderApp {
                                 }
                                 ConnectionStatus::Failed(msg) => {
                                     ui.label(
-                                        egui::RichText::new(format!("❌ {}", msg))
+                                        egui::RichText::new("❌ Connection Failed")
                                             .color(self.theme.error),
                                     );
+                                    // ui.label(
+                                    //     egui::RichText::new(format!("❌ {}", msg))
+                                    //         .color(self.theme.error),
+                                    // );
                                 }
                             }
                         });
@@ -888,15 +910,33 @@ impl MacUploaderApp {
                     } else {
                         (
                             "Start Watching",
-                            if button_enabled { self.theme.success } else { egui::Color32::from_rgb(100, 100, 100) },
-                            if button_enabled { egui::Color32::from_rgb(34, 197, 94) } else { egui::Color32::from_rgb(100, 100, 100) },
-                            if button_enabled { egui::Color32::WHITE } else { egui::Color32::from_rgb(160, 160, 160) },
+                            if button_enabled {
+                                self.theme.success
+                            } else {
+                                egui::Color32::from_rgb(100, 100, 100)
+                            },
+                            if button_enabled {
+                                egui::Color32::from_rgb(34, 197, 94)
+                            } else {
+                                egui::Color32::from_rgb(100, 100, 100)
+                            },
+                            if button_enabled {
+                                egui::Color32::WHITE
+                            } else {
+                                egui::Color32::from_rgb(160, 160, 160)
+                            },
                         )
                     };
 
                     let main_size = egui::vec2(140.0, 36.0);
-                    let (main_rect, main_response) =
-                        ui.allocate_exact_size(main_size, if button_enabled { egui::Sense::click() } else { egui::Sense::hover() });
+                    let (main_rect, main_response) = ui.allocate_exact_size(
+                        main_size,
+                        if button_enabled {
+                            egui::Sense::click()
+                        } else {
+                            egui::Sense::hover()
+                        },
+                    );
 
                     let main_bg = if button_enabled && main_response.hovered() {
                         hover_color
@@ -913,7 +953,10 @@ impl MacUploaderApp {
                     .rounding(self.theme.radius_medium)
                     .fill(main_bg)
                     .stroke(if button_enabled {
-                        Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30))
+                        Stroke::new(
+                            1.0,
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+                        )
                     } else {
                         Stroke::NONE // No border when disabled
                     });
@@ -927,7 +970,6 @@ impl MacUploaderApp {
                             self.start_watching();
                         }
                     }
-
 
                     ui.add_space(self.theme.spacing_small);
 
@@ -949,8 +991,8 @@ impl MacUploaderApp {
                             .size(14.0)
                             .color(self.theme.text_primary),
                     )
-                    .rounding(self.theme.radius_medium)
-                    .fill(gallery_bg);
+                    .rounding(self.theme.radius_medium);
+                    // .fill(gallery_bg);
 
                     let gallery_click = ui.put(gallery_rect, gallery_button);
 
@@ -1194,11 +1236,13 @@ impl MacUploaderApp {
 
                     // Logs scroll area - use all remaining height
                     let available_height = ui.available_height();
+                    let available_width = ui.available_width();
                     egui::ScrollArea::vertical()
                         .id_salt("logs_scroll")
                         .stick_to_bottom(true)
                         .auto_shrink([false; 2])
                         .max_height(available_height)
+                        .max_width(available_width)
                         .show(ui, |ui| {
                             if self.logs.is_empty() {
                                 ui.centered_and_justified(|ui| {
@@ -1211,7 +1255,7 @@ impl MacUploaderApp {
                             } else {
                                 // Show more log entries with better formatting
                                 for (i, log) in self.logs.iter().enumerate() {
-                                    ui.horizontal(|ui| {
+                                    ui.horizontal_wrapped(|ui| {
                                         // Add timestamp or index for better readability
                                         ui.label(
                                             egui::RichText::new(format!("{:>3}", i + 1))
