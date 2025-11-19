@@ -13,7 +13,7 @@ BINARY_NAME="mac-uploader"
 APP_NAME="MacUploader"
 
 # Bundle ID (ตั้งเองได้ แต่ควรไม่ซ้ำ)
-BUNDLE_ID="com.khai.mac-uploader"
+BUNDLE_ID="com.khai.mac-uploader-v1"
 
 # profile ที่ใช้ build (ปกติใช้ release)
 BUILD_PROFILE="release"
@@ -22,8 +22,7 @@ BUILD_PROFILE="release"
 DIST_DIR="dist"
 
 # ถ้ามีไอคอน .icns ให้ใส่ path ไว้ตรงนี้ (ไม่มีก็ปล่อยว่างได้)
-# ICON_FILE="assets/app-icon.icns"
-ICON_FILE=""
+ICON_FILE="assets/app-icon.icns"
 
 
 ###################################
@@ -74,9 +73,9 @@ cat > "${CONTENTS_DIR}/Info.plist" <<EOF
 
     <!-- เวอร์ชัน (เซ็ตง่าย ๆ ไว้ก่อน) -->
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>1.0.1</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
 
     <!-- binary หลักที่จะรัน -->
     <key>CFBundleExecutable</key>
@@ -98,12 +97,15 @@ EOF
 # ถ้ามี ICON_FILE ให้ใส่เพิ่ม
 if [ -n "${ICON_FILE}" ] && [ -f "${ICON_FILE}" ]; then
   ICON_BASENAME=$(basename "${ICON_FILE}")
+  ICON_NAME="${ICON_BASENAME%.*}"  # ตัดนามสกุลออก เช่น myapp.icns -> myapp
   echo "🎨 Copying icon: ${ICON_FILE}"
   cp "${ICON_FILE}" "${RESOURCES_DIR}/${ICON_BASENAME}"
 
   cat >> "${CONTENTS_DIR}/Info.plist" <<EOF
     <key>CFBundleIconFile</key>
-    <string>${ICON_BASENAME}</string>
+    <string>${ICON_NAME}</string>
+    <key>CFBundleIconName</key>
+    <string>${ICON_NAME}</string>
 EOF
 fi
 

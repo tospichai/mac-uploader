@@ -10,6 +10,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
+// Placeholder constants for input fields
+const API_ENDPOINT_PLACEHOLDER: &str = "https://your-api-endpoint.com";
+const API_KEY_PLACEHOLDER: &str = "Enter your API key here...";
+const EVENT_CODE_PLACEHOLDER: &str = "your-event-code";
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub api_endpoint: String,
@@ -31,6 +36,9 @@ pub struct MacUploaderApp {
     logs: Vec<String>,
     is_watching: bool,
     new_logs_count: usize,
+    previous_event_code: String, // Track previous event code to detect changes
+    previous_api_endpoint: String, // Track previous API endpoint to detect changes
+    previous_api_key: String, // Track previous API key to detect changes
 
     // Core components
     upload_queue: Arc<Mutex<UploadQueue>>,
@@ -66,22 +74,55 @@ impl MacUploaderApp {
         let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
         let (log_sender, log_receiver) = mpsc::unbounded_channel::<String>();
 
-        // Determine config file path
-        let config_path = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("config.json");
+        // Determine config file path using macOS standard location
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("MacUploader");
+
+        // Create config directory if it doesn't exist
+        if !config_dir.exists() {
+            if let Err(e) = std::fs::create_dir_all(&config_dir) {
+                eprintln!("Failed to create config directory: {}", e);
+            }
+        }
+
+        let config_path = config_dir.join("config.json");
 
         // Load config if exists
-        let config = Self::load_config(&config_path).unwrap_or_default();
+        let mut config = Self::load_config(&config_path).unwrap_or_default();
+
+        // Migrate old config if it exists and new config doesn't
+        if !config_path.exists() {
+            let old_config_path = std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("config.json");
+
+            if old_config_path.exists() {
+                match Self::load_config(&old_config_path) {
+                    Some(old_config) => {
+                        config = old_config;
+                        if let Err(e) = std::fs::copy(&old_config_path, &config_path) {
+                            eprintln!("Failed to migrate config: {}", e);
+                        } else {
+                            println!("Migrated config from {:?} to {:?}", old_config_path, config_path);
+                        }
+                    }
+                    None => {
+                        eprintln!("Failed to load old config for migration");
+                    }
+                }
+            }
+        }
 
         let theme = MacTheme::default();
 
+        let api_key_is_empty = config.api_key.is_empty();
         Self {
-            api_endpoint: config.api_endpoint,
-            api_key: config.api_key,
-            event_code: config.event_code,
+            api_endpoint: config.api_endpoint.clone(),
+            api_key: config.api_key.clone(),
+            event_code: config.event_code.clone(),
             watch_folder: config.watch_folder.and_then(|s| Some(PathBuf::from(s))),
-            show_api_key: false,
+            show_api_key: api_key_is_empty,
             connection_status: ConnectionStatus::NotTested,
             logs: Vec::new(),
             is_watching: false,
@@ -95,28 +136,33 @@ impl MacUploaderApp {
             log_receiver: Some(log_receiver),
             config_path,
             theme,
+            previous_event_code: config.event_code.clone(),
+            previous_api_endpoint: config.api_endpoint.clone(),
+            previous_api_key: config.api_key.clone(),
         }
     }
 
     fn load_config(path: &PathBuf) -> Option<AppConfig> {
+        println!("Attempting to load config from: {:?}", path);
         if path.exists() {
             match fs::read_to_string(path) {
                 Ok(content) => match serde_json::from_str::<AppConfig>(&content) {
                     Ok(config) => {
-                        println!("Loaded config from {:?}", path);
+                        println!("✅ Successfully loaded config from {:?}", path);
                         Some(config)
                     }
                     Err(e) => {
-                        eprintln!("Failed to parse config: {}", e);
+                        eprintln!("❌ Failed to parse config: {}", e);
                         None
                     }
                 },
                 Err(e) => {
-                    eprintln!("Failed to read config file: {}", e);
+                    eprintln!("❌ Failed to read config file: {}", e);
                     None
                 }
             }
         } else {
+            println!("ℹ️ Config file does not exist at: {:?}", path);
             None
         }
     }
@@ -132,16 +178,17 @@ impl MacUploaderApp {
                 .map(|p| p.to_string_lossy().to_string()),
         };
 
+        println!("💾 Saving config to: {:?}", self.config_path);
         match serde_json::to_string_pretty(&config) {
             Ok(json) => {
                 if let Err(e) = fs::write(&self.config_path, json) {
-                    eprintln!("Failed to save config: {}", e);
+                    eprintln!("❌ Failed to save config: {}", e);
                 } else {
-                    println!("Saved config to {:?}", self.config_path);
+                    println!("✅ Successfully saved config to {:?}", self.config_path);
                 }
             }
             Err(e) => {
-                eprintln!("Failed to serialize config: {}", e);
+                eprintln!("❌ Failed to serialize config: {}", e);
             }
         }
     }
@@ -442,10 +489,16 @@ impl MacUploaderApp {
             }
         } else {
             if let Some(sender) = &self.log_sender {
-                let _ = sender
-                    .send("⚠️ Please configure API endpoint and event code first".to_string());
+                let _ =
+                    sender.send("Please configure API endpoint and event code first".to_string());
             }
         }
+    }
+
+    fn should_enable_start_button(&self) -> bool {
+        // Button is enabled if we're currently watching (to allow stopping)
+        // OR if we have a successful connection status
+        self.is_watching || self.connection_status == ConnectionStatus::Connected
     }
 }
 
@@ -453,6 +506,53 @@ impl eframe::App for MacUploaderApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Apply the theme
         self.theme.apply_to_ctx(ctx);
+
+        // Check if event code has changed and update UploadManager if needed
+        if self.event_code != self.previous_event_code {
+            if let Some(ref manager_arc) = self.upload_manager {
+                if let Some(rt) = &self.runtime {
+                    let manager_clone = manager_arc.clone();
+                    let new_event_code = self.event_code.clone();
+                    let log_sender = self.log_sender.clone();
+
+                    rt.spawn(async move {
+                        let manager = manager_clone.lock().await;
+                        manager.update_event_code(new_event_code).await;
+
+                        if let Some(sender) = log_sender {
+                            let _ =
+                                sender.send("✅ Event code updated in UploadManager".to_string());
+                        }
+                    });
+                }
+            }
+
+            // Update previous_event_code to current value
+            self.previous_event_code = self.event_code.clone();
+
+            // Save configuration when event code changes
+            self.save_config();
+        }
+
+        // Check if API endpoint or API key has changed and reset connection status
+        if self.api_endpoint != self.previous_api_endpoint || self.api_key != self.previous_api_key {
+            // If currently watching, stop it first
+            if self.is_watching {
+                self.stop_watching();
+                self.logs.push("⚠️ Stopped watching due to API settings change".to_string());
+            }
+
+            // Reset connection status to NotTested
+            self.connection_status = ConnectionStatus::NotTested;
+            self.logs.push("🔄 Connection status reset - please test connection again".to_string());
+
+            // Update previous values to current values
+            self.previous_api_endpoint = self.api_endpoint.clone();
+            self.previous_api_key = self.api_key.clone();
+
+            // Save configuration
+            self.save_config();
+        }
 
         // Check for new log messages
         if let Some(ref mut receiver) = self.log_receiver {
@@ -531,8 +631,7 @@ impl MacUploaderApp {
         frame.show(ui, |ui| {
             ui.scope(|ui| {
                 // กำหนดสีพื้นหลัง TextEdit
-                ui.style_mut().visuals.widgets.inactive.bg_fill =
-                    self.theme.background; // พื้นหลังสีเทาเข้มอมฟ้า
+                ui.style_mut().visuals.widgets.inactive.bg_fill = self.theme.background; // พื้นหลังสีเทาเข้มอมฟ้า
                 ui.style_mut().visuals.widgets.hovered.bg_fill =
                     egui::Color32::from_rgb(50, 50, 70); // สีเมื่อเมาส์ชี้
                 ui.style_mut().visuals.widgets.active.bg_fill = egui::Color32::from_rgb(60, 60, 90); // สีเมื่อถูกโฟกัส
@@ -579,7 +678,8 @@ impl MacUploaderApp {
                                 [ui.available_width(), 24.0],
                                 egui::TextEdit::singleline(&mut self.api_endpoint)
                                     .font(egui::TextStyle::Body)
-                                    .margin(egui::Vec2::new(8.0, 4.0)),
+                                    .margin(egui::Vec2::new(8.0, 4.0))
+                                    .hint_text(API_ENDPOINT_PLACEHOLDER),
                             );
                         });
                         ui.add_space(self.theme.spacing_medium);
@@ -600,14 +700,19 @@ impl MacUploaderApp {
                                         [ui.available_width() - 80.0, 24.0],
                                         egui::TextEdit::singleline(&mut self.api_key)
                                             .font(egui::TextStyle::Body)
-                                            .margin(egui::Vec2::new(8.0, 4.0)),
+                                            .margin(egui::Vec2::new(8.0, 4.0))
+                                            .hint_text(API_KEY_PLACEHOLDER),
                                     );
                                 } else {
-                                    let masked = "*".repeat(self.api_key.len().min(20));
+                                    let display_text = if self.api_key.is_empty() {
+                                        API_KEY_PLACEHOLDER.to_string()
+                                    } else {
+                                        "*".repeat(self.api_key.len().min(20))
+                                    };
                                     ui.add_sized(
                                         [ui.available_width() - 80.0, 24.0],
                                         egui::Label::new(
-                                            egui::RichText::new(masked)
+                                            egui::RichText::new(display_text)
                                                 .color(self.theme.text_muted),
                                         ),
                                     );
@@ -648,7 +753,8 @@ impl MacUploaderApp {
                                 [ui.available_width(), 24.0],
                                 egui::TextEdit::singleline(&mut self.event_code)
                                     .font(egui::TextStyle::Body)
-                                    .margin(egui::Vec2::new(8.0, 4.0)),
+                                    .margin(egui::Vec2::new(8.0, 4.0))
+                                    .hint_text(EVENT_CODE_PLACEHOLDER),
                             );
                         });
                         ui.add_space(self.theme.spacing_medium);
@@ -738,7 +844,8 @@ impl MacUploaderApp {
                                 ConnectionStatus::Testing => {
                                     ui.spinner();
                                     ui.label(
-                                        egui::RichText::new("Testing...").color(self.theme.text_muted),
+                                        egui::RichText::new("Testing...")
+                                            .color(self.theme.text_muted),
                                     );
                                 }
                                 ConnectionStatus::Connected => {
@@ -770,25 +877,28 @@ impl MacUploaderApp {
                     // -----------------------------------------
                     // Start / Stop Watching Button
                     // -----------------------------------------
-                    let (button_text, normal_color, hover_color) = if self.is_watching {
+                    let button_enabled = self.should_enable_start_button();
+                    let (button_text, normal_color, hover_color, text_color) = if self.is_watching {
                         (
                             "Stop Watching",
                             self.theme.error,
                             egui::Color32::from_rgb(220, 38, 38),
+                            egui::Color32::WHITE,
                         )
                     } else {
                         (
                             "Start Watching",
-                            self.theme.success,
-                            egui::Color32::from_rgb(34, 197, 94),
+                            if button_enabled { self.theme.success } else { egui::Color32::from_rgb(100, 100, 100) },
+                            if button_enabled { egui::Color32::from_rgb(34, 197, 94) } else { egui::Color32::from_rgb(100, 100, 100) },
+                            if button_enabled { egui::Color32::WHITE } else { egui::Color32::from_rgb(160, 160, 160) },
                         )
                     };
 
                     let main_size = egui::vec2(140.0, 36.0);
                     let (main_rect, main_response) =
-                        ui.allocate_exact_size(main_size, egui::Sense::click());
+                        ui.allocate_exact_size(main_size, if button_enabled { egui::Sense::click() } else { egui::Sense::hover() });
 
-                    let main_bg = if main_response.hovered() {
+                    let main_bg = if button_enabled && main_response.hovered() {
                         hover_color
                     } else {
                         normal_color
@@ -797,21 +907,27 @@ impl MacUploaderApp {
                     let main_button = egui::Button::new(
                         egui::RichText::new(button_text)
                             .size(14.0)
-                            .color(egui::Color32::WHITE)
+                            .color(text_color)
                             .strong(),
                     )
                     .rounding(self.theme.radius_medium)
-                    .fill(main_bg);
+                    .fill(main_bg)
+                    .stroke(if button_enabled {
+                        Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30))
+                    } else {
+                        Stroke::NONE // No border when disabled
+                    });
 
                     let main_click = ui.put(main_rect, main_button);
 
-                    if main_click.clicked() {
+                    if main_click.clicked() && button_enabled {
                         if self.is_watching {
                             self.stop_watching();
                         } else {
                             self.start_watching();
                         }
                     }
+
 
                     ui.add_space(self.theme.spacing_small);
 

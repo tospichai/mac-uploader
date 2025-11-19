@@ -1,6 +1,6 @@
 {
-  "api_endpoint": "https://4904f0e1d8fa.ngrok-free.app",
-  "api_key": "your-app-api-key",
-  "event_code": "wedding-abc",
+  "api_endpoint": "https://df35704d0e56.ngrok-free.app",
+  "api_key": "jappy",
+  "event_code": "my-event-456",
   "watch_folder": "/Users/tospichai/Desktop/watcher-test"
 }

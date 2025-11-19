@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- ชื่อที่จะแสดงในเมนูบาร์ / About -->
+    <key>CFBundleName</key>
+    <string>MacUploader</string>
+
+    <!-- Bundle identifier -->
+    <key>CFBundleIdentifier</key>
+    <string>com.khai.mac-uploader-v1</string>
+
+    <!-- เวอร์ชัน (เซ็ตง่าย ๆ ไว้ก่อน) -->
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.1</string>
+    <key>CFBundleVersion</key>
+    <string>2</string>
+
+    <!-- binary หลักที่จะรัน -->
+    <key>CFBundleExecutable</key>
+    <string>mac-uploader</string>
+
+    <!-- ทำให้เป็นแอปปกติ แสดงใน Dock + Cmd+Tab -->
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- อย่าตั้งเป็น true ถ้าอยากให้ขึ้น Dock -->
+    <key>LSUIElement</key>
+    <false/>
+
+    <!-- รองรับ HiDPI -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+  </dict>
+</plist>

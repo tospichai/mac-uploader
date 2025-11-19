@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, RwLock};
 use uuid::Uuid;
 use crate::upload_queue::UploadQueue;
 use crate::api_client::ApiClient;
@@ -9,7 +9,7 @@ use std::fs;
 pub struct UploadManager {
     queue: Arc<Mutex<UploadQueue>>,
     api_client: Arc<ApiClient>,
-    event_code: String,
+    event_code: Arc<RwLock<String>>,
     watch_folder: PathBuf,
     is_running: bool,
     log_sender: Option<mpsc::UnboundedSender<String>>,
@@ -28,7 +28,7 @@ impl UploadManager {
         Self {
             queue,
             api_client,
-            event_code,
+            event_code: Arc::new(RwLock::new(event_code)),
             watch_folder,
             is_running: false,
             log_sender,
@@ -45,8 +45,9 @@ impl UploadManager {
 
         // Log that upload manager is starting
         if let Some(ref sender) = self.log_sender {
+            let event_code = self.event_code.read().await;
             let _ = sender.send("🚀 UploadManager starting...".to_string());
-            let _ = sender.send(format!("📋 Event code: {}", self.event_code));
+            let _ = sender.send(format!("📋 Event code: {}", *event_code));
             let _ = sender.send(format!("🔑 API key: {}...", &self.api_key[..self.api_key.len().min(10)]));
             let _ = sender.send(format!("📁 Watch folder: {}", self.watch_folder.display()));
         }
@@ -103,9 +104,11 @@ impl UploadManager {
 
                     // Start upload in a separate task
                     tokio::spawn(async move {
+                        // Get the current event code at upload time
+                        let event_code_value = event_code.read().await;
                         let result = Self::upload_and_move_file(
                             &api_client,
-                            &event_code,
+                            &event_code_value,
                             &file_path,
                             &watch_folder,
                             item_id,
@@ -242,5 +245,18 @@ impl UploadManager {
 
     pub fn is_running(&self) -> bool {
         self.is_running
+    }
+
+    pub async fn update_event_code(&self, new_event_code: String) {
+        let mut event_code = self.event_code.write().await;
+        if *event_code != new_event_code {
+            let old_event_code = event_code.clone();
+            *event_code = new_event_code.clone();
+
+            // Log the change
+            if let Some(ref sender) = self.log_sender {
+                let _ = sender.send(format!("🔄 Event code updated: {} -> {}", old_event_code, new_event_code));
+            }
+        }
     }
 }
