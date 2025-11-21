@@ -122,7 +122,7 @@ fn is_image_file(path: &Path) -> bool {
     if let Some(extension) = path.extension() {
         if let Some(ext_str) = extension.to_str() {
             let ext_lower = ext_str.to_lowercase();
-            matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "heic")
+            matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "nef")
         } else {
             false
         }
@@ -141,6 +141,7 @@ mod tests {
         assert!(is_image_file(Path::new("test.jpeg")));
         assert!(is_image_file(Path::new("test.png")));
         assert!(is_image_file(Path::new("test.heic")));
+        assert!(is_image_file(Path::new("test.nef")));
         assert!(is_image_file(Path::new("TEST.JPG"))); // Test case insensitive
         assert!(!is_image_file(Path::new("test.txt")));
         assert!(!is_image_file(Path::new("test")));
