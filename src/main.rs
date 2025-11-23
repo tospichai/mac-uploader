@@ -24,7 +24,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "Mac Photo Uploader",
+        "Foldex",
         options,
         Box::new(|_cc| {
             // This is where you initialize your app

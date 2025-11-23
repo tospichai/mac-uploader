@@ -17,11 +17,11 @@ cat <<EOF > $APP/Contents/Info.plist
 <plist version="1.0">
   <dict>
     <key>CFBundleName</key>
-    <string>Mac Uploader</string>
+    <string>Foldex</string>
     <key>CFBundleIdentifier</key>
-    <string>com.khai.mac-uploader</string>
+    <string>com.khai.foldex</string>
     <key>CFBundleExecutable</key>
-    <string>mac-uploader</string>
+    <string>foldex</string>
     <key>LSUIElement</key>
     <true/>
   </dict>
