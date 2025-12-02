@@ -68,7 +68,7 @@ impl ApiClient {
     }
 
     pub async fn test_connection(&self, api_key: &str) -> Result<HealthResponse, ApiError> {
-        let url = format!("{}/api/health", self.base_url.trim_end_matches('/'));
+        let url = format!("{}/health", self.base_url.trim_end_matches('/'));
 
         let response = self.client
             .get(&url)
@@ -100,12 +100,12 @@ impl ApiClient {
         api_key: &str,
     ) -> Result<UploadResponse, ApiError> {
         println!("🚀 ApiClient::upload_photo called");
-        println!("📡 URL: {}/api/events/{}/photos", self.base_url.trim_end_matches('/'), event_code);
+        println!("📡 URL: {}/api/gallery/{}/photos", self.base_url.trim_end_matches('/'), event_code);
         println!("📁 File path: {}", file_path.display());
         println!("🔑 API key: {}...", &api_key[..api_key.len().min(10)]);
 
         let url = format!(
-            "{}/api/events/{}/photos",
+            "{}/api/gallery/{}/photos",
             self.base_url.trim_end_matches('/'),
             event_code
         );
