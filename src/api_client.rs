@@ -68,7 +68,7 @@ impl ApiClient {
     }
 
     pub async fn test_connection(&self, api_key: &str) -> Result<HealthResponse, ApiError> {
-        let url = format!("{}/health", self.base_url.trim_end_matches('/'));
+        let url = format!("{}/check-api-key", self.base_url.trim_end_matches('/'));
 
         let response = self.client
             .get(&url)
