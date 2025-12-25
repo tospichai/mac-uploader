@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
+use std::sync::mpsc as std_mpsc;
 
 // Placeholder constants for input fields
 const API_ENDPOINT_PLACEHOLDER: &str = "https://your-api-endpoint.com";
@@ -53,6 +54,12 @@ pub struct MacUploaderApp {
     log_sender: Option<mpsc::UnboundedSender<String>>,
     log_receiver: Option<mpsc::UnboundedReceiver<String>>,
 
+    // File event channel
+    file_sender: Option<std_mpsc::Sender<PathBuf>>,
+    file_receiver: Option<std_mpsc::Receiver<PathBuf>>,
+    should_scroll_logs_to_bottom: bool,
+    should_scroll_files_to_top: bool,
+
     // Config file path
     config_path: PathBuf,
 
@@ -73,6 +80,7 @@ impl MacUploaderApp {
     pub fn new() -> Self {
         let runtime = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
         let (log_sender, log_receiver) = mpsc::unbounded_channel::<String>();
+        let (file_sender, file_receiver) = std_mpsc::channel();
 
         // Determine config file path using macOS standard location
         let config_dir = dirs::config_dir()
@@ -137,6 +145,10 @@ impl MacUploaderApp {
             runtime: Some(runtime),
             log_sender: Some(log_sender),
             log_receiver: Some(log_receiver),
+            file_sender: Some(file_sender),
+            file_receiver: Some(file_receiver),
+            should_scroll_logs_to_bottom: false,
+            should_scroll_files_to_top: false,
             config_path,
             theme,
             previous_event_code: config.event_code.clone(),
@@ -274,91 +286,43 @@ impl MacUploaderApp {
 
     fn start_file_watcher(&mut self) {
         if let Some(ref folder) = self.watch_folder {
-            let upload_queue = self.upload_queue.clone();
-            let folder_clone = folder.clone();
-            let log_sender = self.log_sender.clone();
-
+            
             // Log the attempt to start watching
             self.logs.push(format!(
                 "Attempting to start file watcher for: {}",
                 folder.display()
             ));
 
-            // Create file watcher
-            match FileWatcher::new(folder_clone.clone(), move |file_path| {
-                let queue = upload_queue.clone();
-                let file_path_clone = file_path.clone();
-                let log_sender_clone = log_sender.clone();
-
-                println!(
-                    "🎯 File watcher callback triggered for: {}",
-                    file_path_clone.display()
-                );
-
-                // We need to spawn a new runtime in the callback thread
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-                rt.block_on(async move {
-                    let mut q = queue.lock().await;
-                    let file_name = file_path_clone
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown");
-
-                    // Log file detection
-                    if let Some(sender) = &log_sender_clone {
-                        let _ = sender.send("🔔 FILE WATCHER CALLBACK TRIGGERED".to_string());
-                        let _ = sender.send(format!("📁 Detected new file: {}", file_name));
-                        let _ = sender.send(format!("📍 Full path: {}", file_path_clone.display()));
-                        let _ = sender.send(format!(
-                            "📊 Queue size before adding: {}",
-                            q.get_stats().total
+            if let Some(sender) = &self.file_sender {
+                 // Create file watcher with channel sender
+                match FileWatcher::new(folder.clone(), sender.clone()) {
+                    Ok(watcher) => {
+                        self.file_watcher = Some(watcher);
+                        self.logs.push(format!(
+                            "✅ Successfully started watching folder: {}",
+                            folder.display()
                         ));
+                        self.logs.push(
+                            "📡 File watcher is now active and monitoring for new image files..."
+                                .to_string(),
+                        );
                     }
+                    Err(e) => {
+                        // Handle error with more detail
+                        let error_msg = format!("❌ Failed to create file watcher: {}", e);
+                        self.logs.push(error_msg.clone());
+                        self.logs.push("💡 Possible solutions:".to_string());
+                        self.logs.push("   • Check folder permissions".to_string());
+                        self.logs.push("   • Try a different folder".to_string());
+                        self.logs
+                            .push("   • Ensure the folder exists and is accessible".to_string());
 
-                    if let Some(item_id) = q.add_file(file_path).await {
-                        // Log that file was added to queue
-                        if let Some(sender) = &log_sender_clone {
-                            let _ = sender.send(format!(
-                                "➕ Added to upload queue: {} (ID: {})",
-                                file_name, item_id
-                            ));
-                            let _ = sender.send(format!(
-                                "📊 Queue size after adding: {}",
-                                q.get_stats().total
-                            ));
-                        }
-                    } else {
-                        // Log that file was already in queue
-                        if let Some(sender) = &log_sender_clone {
-                            let _ = sender.send(format!("⚠ File already in queue: {}", file_name));
-                        }
+                        // Also log to stderr for terminal visibility
+                        eprintln!("{}", error_msg);
                     }
-                });
-            }) {
-                Ok(watcher) => {
-                    self.file_watcher = Some(watcher);
-                    self.logs.push(format!(
-                        "✅ Successfully started watching folder: {}",
-                        folder.display()
-                    ));
-                    self.logs.push(
-                        "📡 File watcher is now active and monitoring for new image files..."
-                            .to_string(),
-                    );
                 }
-                Err(e) => {
-                    // Handle error with more detail
-                    let error_msg = format!("❌ Failed to create file watcher: {}", e);
-                    self.logs.push(error_msg.clone());
-                    self.logs.push("💡 Possible solutions:".to_string());
-                    self.logs.push("   • Check folder permissions".to_string());
-                    self.logs.push("   • Try a different folder".to_string());
-                    self.logs
-                        .push("   • Ensure the folder exists and is accessible".to_string());
-
-                    // Also log to stderr for terminal visibility
-                    eprintln!("{}", error_msg);
-                }
+            } else {
+                 self.logs.push("❌ Internal error: File sender not initialized".to_string());
             }
         }
     }
@@ -602,6 +566,53 @@ impl eframe::App for MacUploaderApp {
             self.save_config();
         }
 
+        // Process file events from the watcher
+        let mut new_files = Vec::new();
+        if let Some(ref receiver) = self.file_receiver {
+            // Collect all pending file events first to avoid borrowing self while iterating
+            while let Ok(file_path) = receiver.try_recv() {
+                new_files.push(file_path);
+            }
+        }
+
+        // Process collected files
+        for file_path in new_files {
+            // Ensure we are watching before processing events
+            if !self.is_watching {
+                continue;
+            }
+
+            if let Some(ref rt) = self.runtime {
+                let upload_queue = self.upload_queue.clone();
+                let log_sender = self.log_sender.clone();
+                
+                rt.spawn(async move {
+                        let mut q = upload_queue.lock().await;
+                    let file_name = file_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    
+                        // Log file detection (optional, might be too noisy for large batches, but keeping for now)
+                        // Only log significant events
+                    
+                    if let Some(item_id) = q.add_file(file_path).await {
+                        // Log that file was added to queue
+                        if let Some(sender) = &log_sender {
+                            let _ = sender.send(format!(
+                                "➕ Added: {} (ID: {})",
+                                file_name, item_id
+                            ));
+                        }
+                    }
+                });
+                
+                // Signal that we should scroll files to top
+                self.should_scroll_files_to_top = true;
+            }
+        }
+
         // Check if API endpoint or API key has changed and reset connection status
         if self.api_endpoint != self.previous_api_endpoint || self.api_key != self.previous_api_key
         {
@@ -650,7 +661,15 @@ impl eframe::App for MacUploaderApp {
                 } else {
                     self.logs.push(log_msg);
                     self.new_logs_count += 1;
+                    self.should_scroll_logs_to_bottom = true;
                 }
+            }
+            
+            // Limit logs buffer size
+            const MAX_LOGS: usize = 1000;
+            if self.logs.len() > MAX_LOGS {
+                let remove_count = self.logs.len() - MAX_LOGS;
+                self.logs.drain(0..remove_count);
             }
         }
 
@@ -1174,18 +1193,26 @@ impl MacUploaderApp {
 
                     // Show items in queue - content-based height with scroll
                     if stats.total > 0 {
-                        // Fixed maximum height to prevent unnecessary expansion
-                        let max_height = 150.0;
-                        egui::ScrollArea::vertical()
+                        // Fixed height for stability
+                        let height = 150.0;
+                        let mut scroll_area = egui::ScrollArea::vertical()
                             .id_salt("upload_queue_scroll")
-                            .max_height(max_height)
-                            .auto_shrink([false; 2])
-                            .show(ui, |ui| {
+                            .max_height(height)
+                            .min_scrolled_height(height)
+                            .auto_shrink([false; 2]);
+
+                        // Auto-scroll to top if new files added
+                        if self.should_scroll_files_to_top {
+                             scroll_area = scroll_area.vertical_scroll_offset(0.0);
+                             self.should_scroll_files_to_top = false;
+                        }
+
+                        scroll_area.show(ui, |ui| {
                                 let mut items = queue.get_items();
                                 items.sort_by(|a, b| b.added_at.cmp(&a.added_at));
 
                                 // Show items with content-based height
-                                for item in items.iter().take(10) {
+                                for item in items.iter() {
                                     self.show_queue_item(ui, item);
                                 }
                             });
@@ -1276,17 +1303,6 @@ impl MacUploaderApp {
                             .size(12.0)
                             .color(status_color),
                     );
-
-                    // Progress bar for uploading items
-                    if matches!(item.status, crate::upload_queue::UploadStatus::Uploading) {
-                        ui.add_space(2.0);
-                        ui.add(
-                            egui::ProgressBar::new(item.progress)
-                                .desired_width(ui.available_width())
-                                .fill(self.theme.surface_hover)
-                                .show_percentage(),
-                        );
-                    }
                 });
             });
         });
@@ -1330,13 +1346,34 @@ impl MacUploaderApp {
                     // Logs scroll area - use all remaining height
                     let available_height = ui.available_height();
                     let available_width = ui.available_width();
-                    egui::ScrollArea::vertical()
+                    // Logs scroll area - use all remaining height
+                    let available_height = ui.available_height();
+                    let available_width = ui.available_width();
+                    
+                    let mut scroll_area = egui::ScrollArea::vertical()
                         .id_salt("logs_scroll")
                         .stick_to_bottom(true)
                         .auto_shrink([false; 2])
                         .max_height(available_height)
-                        .max_width(available_width)
-                        .show(ui, |ui| {
+                        .max_width(available_width);
+                        
+                    // Force scroll to bottom if new logs arrived
+                    if self.should_scroll_logs_to_bottom {
+                        // scroll_offset(f32::INFINITY) usually scrolls to bottom
+                         // But stick_to_bottom(true) should handle it if at bottom.
+                         // If user scrolled up, we might want to force it back down?
+                         // The user request says "scroll down mostly".
+                         // stick_to_bottom(true) is default behavior for "terminal like"
+                         // Let's rely on stick_to_bottom(true) which is already there, 
+                         // but we can try to force it if needed. 
+                         // Actually, sticking to bottom is what they asked for.
+                         // But if they scroll up, stick_to_bottom stops sticking.
+                         // If they want it "always", we might need to reset it.
+                         // Let's assume stick_to_bottom is sufficient for now, but ensure it's effective.
+                         self.should_scroll_logs_to_bottom = false;
+                    }
+
+                    scroll_area.show(ui, |ui| {
                             if self.logs.is_empty() {
                                 ui.centered_and_justified(|ui| {
                                     ui.label(

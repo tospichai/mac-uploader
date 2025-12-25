@@ -1,5 +1,5 @@
 [package]
-name = "mac-uploader"
+name = "live-moment-gallery"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,7 +13,7 @@ notify = "6.1.1"
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
 rfd = "0.13.0"
-image = "0.24.8"
+image = { version = "0.24.8", features = ["png"] }
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
 winit = { version = "0.30.5", features = [] }
 chrono = { version = "0.4.33", features = ["serde"] }
@@ -26,3 +26,12 @@ futures-util = "0.3.31"
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-args=-Wl,-application_extension"]
+
+[package.metadata.bundle]
+name = "Live Moment Gallery"
+identifier = "com.digiceb.live-moment-gallery"
+icon = ["assets/AppIcon.icns"]
+copyright = "Copyright (c) 2024 DigiCeb"
+category = "productivity"
+short_description = "Live Moment Gallery for DigiCeb"
+long_description = "A native Mac application for uploading photos to Live Moment Gallery."

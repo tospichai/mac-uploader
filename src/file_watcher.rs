@@ -12,11 +12,7 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
-    pub fn new<P: AsRef<Path>, F>(path: P, callback: F) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        F: Fn(PathBuf) + Send + 'static,
-    {
-        let (tx, rx) = mpsc::channel();
+    pub fn new<P: AsRef<Path>>(path: P, tx: mpsc::Sender<PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
         let path = path.as_ref().to_path_buf();
 
         // Check if the path exists and is accessible
@@ -40,43 +36,41 @@ impl FileWatcher {
             }
         }
 
+        let tx_clone = tx.clone();
+        
         // Create the file system watcher with default config (uses FSEvents on macOS)
         let mut watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 match res {
                     Ok(event) => {
                         // Debug log all events
-                        println!("📁 File system event: {:?} for paths: {:?}", event.kind, event.paths);
+                        // println!("📁 File system event: {:?} for paths: {:?}", event.kind, event.paths);
 
                         // Handle different event types
                         match event.kind {
                             EventKind::Create(_) => {
                                 for path in event.paths {
-                                    println!("🔍 Create event for: {}", path.display());
+                                    // println!("🔍 Create event for: {}", path.display());
                                     // Check if it's a file and an image
                                     if path.is_file() && is_image_file(&path) {
                                         println!("✓ Image file detected: {}", path.display());
-                                        tx.send(path).ok();
-                                    } else {
-                                        println!("⚠ Not an image file or not a regular file: {}", path.display());
-                                    }
+                                        let _ = tx_clone.send(path);
+                                    } 
                                 }
                             }
                             EventKind::Modify(_) => {
-                                // Handle modify events for all image files, regardless of modification time
-                                // This ensures both new and existing files are processed
+                                // Handle modify events for all image files
                                 for path in event.paths {
                                     if path.is_file() && is_image_file(&path) {
-                                        println!("🔍 Modify event for image: {}", path.display());
+                                        // println!("🔍 Modify event for image: {}", path.display());
                                         // Process all image files regardless of modification time
-                                        println!("✓ Image file detected for processing: {}", path.display());
-                                        tx.send(path).ok();
+                                        // println!("✓ Image file detected for processing: {}", path.display());
+                                        let _ = tx_clone.send(path);
                                     }
                                 }
                             }
                             _ => {
-                                // Log other event types for debugging
-                                println!("ℹ Other event type: {:?} for paths: {:?}", event.kind, event.paths);
+                                // Ignore other events
                             }
                         }
                     }
@@ -100,16 +94,12 @@ impl FileWatcher {
         watcher.watch(&path, RecursiveMode::NonRecursive)?;
         println!("✓ Successfully started watching: {}", path.display());
 
-        // Spawn a thread to handle the events
-        let callback = Box::new(callback);
-        let thread_handle = thread::spawn(move || {
-            println!("📡 File watcher event handler thread started");
-            while let Ok(path) = rx.recv() {
-                println!("📤 Processing detected file: {}", path.display());
-                callback(path);
-            }
-            println!("📡 File watcher event handler thread stopped");
-        });
+        // We don't need a separate thread since the watcher callback now sends directly to the channel
+        // But to keep the struct definition satisfied for now (or we can remove the thread handle from struct)
+        // Let's spawn a dummy thread or better yet, remove the thread handle field from struct.
+        // For minimal changes, let's keep the struct signatures similar but simplify logic.
+        
+        let thread_handle = thread::spawn(|| {});
 
         Ok(Self {
             _watcher: watcher,
