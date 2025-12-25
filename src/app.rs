@@ -442,6 +442,9 @@ impl MacUploaderApp {
         self.logs
             .push("File watching initialization complete".to_string());
 
+        // Scan for existing files
+        self.perform_initial_scan();
+
         // Set the watching state to true
         self.is_watching = true;
     }
@@ -471,11 +474,57 @@ impl MacUploaderApp {
         self.is_watching = false;
     }
 
+    fn perform_initial_scan(&mut self) {
+        if let Some(ref folder) = self.watch_folder {
+            let folder_clone = folder.clone();
+            let upload_queue = self.upload_queue.clone();
+            let log_sender = self.log_sender.clone();
+
+            self.logs
+                .push("Scanning for existing files...".to_string());
+
+            if let Some(rt) = &self.runtime {
+                rt.spawn(async move {
+                    if let Ok(entries) = std::fs::read_dir(folder_clone) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() {
+                                let is_image = path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .map(|ext| {
+                                        let ext_lower = ext.to_lowercase();
+                                        matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "nef")
+                                    })
+                                    .unwrap_or(false);
+
+                                if is_image {
+                                    let mut q = upload_queue.lock().await;
+                                    if let Some(id) = q.add_file(path.clone()).await {
+                                        if let Some(sender) = &log_sender {
+                                            let file_name = path
+                                                .file_name()
+                                                .and_then(|n| n.to_str())
+                                                .unwrap_or("unknown");
+                                            let _ = sender.send(format!(
+                                                "🔍 Found existing file: {} (ID: {})",
+                                                file_name, id
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
+
     fn open_gallery(&self) {
         if !self.api_endpoint.is_empty() && !self.event_code.is_empty() {
             let url = format!(
-                "{}/{}/photos",
-                self.api_endpoint.trim_end_matches('/'),
+                "https://www.digiceb.com/gallery/{}",
                 self.event_code
             );
             match webbrowser::open(&url) {
@@ -494,6 +543,22 @@ impl MacUploaderApp {
             if let Some(sender) = &self.log_sender {
                 let _ =
                     sender.send("Please configure API endpoint and event code first".to_string());
+            }
+        }
+    }
+
+    fn open_backend(&self) {
+        let url = "https://www.digiceb.com";
+        match webbrowser::open(url) {
+            Ok(_) => {
+                if let Some(sender) = &self.log_sender {
+                    let _ = sender.send(format!("🌐 Opening backend in browser: {}", url));
+                }
+            }
+            Err(e) => {
+                if let Some(sender) = &self.log_sender {
+                    let _ = sender.send(format!("❌ Failed to open browser: {}", e));
+                }
             }
         }
     }
@@ -998,6 +1063,34 @@ impl MacUploaderApp {
 
                     if gallery_click.clicked() {
                         self.open_gallery();
+                    }
+
+                    ui.add_space(self.theme.spacing_small);
+
+                    // -----------------------------------------
+                    // Manage Backend Button
+                    // -----------------------------------------
+                    let backend_size = egui::vec2(140.0, 36.0);
+                    let (backend_rect, backend_response) =
+                        ui.allocate_exact_size(backend_size, egui::Sense::click());
+
+                    let _backend_bg = if backend_response.hovered() {
+                        self.theme.surface_hover
+                    } else {
+                        self.theme.surface
+                    };
+
+                    let backend_button = egui::Button::new(
+                        egui::RichText::new("Manage Backend")
+                            .size(14.0)
+                            .color(self.theme.text_primary),
+                    )
+                    .rounding(self.theme.radius_medium);
+
+                    let backend_click = ui.put(backend_rect, backend_button);
+
+                    if backend_click.clicked() {
+                        self.open_backend();
                     }
                 });
             });

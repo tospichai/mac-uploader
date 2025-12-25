@@ -107,7 +107,7 @@ impl UploadManager {
                         // Get the current event code at upload time
                         let event_code_value = event_code.read().await;
                         let result = Self::upload_and_move_file(
-                            &api_client,
+                            api_client,
                             &event_code_value,
                             &file_path,
                             &watch_folder,
@@ -180,7 +180,7 @@ impl UploadManager {
     }
 
     async fn upload_and_move_file(
-        api_client: &ApiClient,
+        api_client: Arc<ApiClient>,
         event_code: &str,
         file_path: &PathBuf,
         watch_folder: &PathBuf,
@@ -196,9 +196,47 @@ impl UploadManager {
             let _ = sender.send(format!("🎯 Event code: {}", event_code));
         }
 
-        // Perform the upload with the correct API key
-        let response = api_client.upload_photo(event_code, file_path, api_key).await
-            .map_err(|e| format!("API error: {}", e))?;
+        // Create a channel for progress updates
+        let (progress_tx, mut progress_rx) = mpsc::unbounded_channel();
+        
+        let api_client_clone = api_client.clone();
+        let event_code_string = event_code.to_string();
+        let file_path_clone = file_path.clone();
+        let api_key_string = api_key.to_string();
+
+        // Spawn a task for the upload to allow concurrent progress monitoring
+        let mut upload_task = tokio::spawn(async move {
+            api_client_clone.upload_photo(
+                &event_code_string, 
+                &file_path_clone, 
+                &api_key_string,
+                move |progress| {
+                    let _ = progress_tx.send(progress);
+                }
+            ).await
+        });
+
+        // Monitor progress and wait for completion
+        let result = loop {
+            tokio::select! {
+                Some(progress) = progress_rx.recv() => {
+                    let mut q = queue.lock().await;
+                    if let Some(item) = q.get_item_mut_by_id(item_id) {
+                        item.update_progress(progress);
+                    }
+                }
+                res = &mut upload_task => {
+                    match res {
+                        Ok(upload_result) => break upload_result,
+                        Err(e) => break Err(crate::api_client::ApiError::ApiError { 
+                            message: format!("Task join error: {}", e) 
+                        }),
+                    }
+                }
+            }
+        };
+
+        let response = result.map_err(|e| format!("API error: {}", e))?;
 
         // If upload succeeded, move the file to uploaded folder
         let uploaded_folder = watch_folder.join("uploaded");

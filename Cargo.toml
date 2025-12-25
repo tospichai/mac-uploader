@@ -8,7 +8,7 @@ eframe = "0.29.1"
 egui = "0.29.1"
 egui_extras = "0.29.1"
 tokio = { version = "1.35.1", features = ["full"] }
-reqwest = { version = "0.11.24", features = ["multipart", "json"] }
+reqwest = { version = "0.11.24", features = ["multipart", "json", "stream"] }
 notify = "6.1.1"
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
@@ -21,6 +21,8 @@ env_logger = "0.11.3"
 thiserror = "1.0.57"
 webbrowser = "0.8.12"
 dirs = "5.0"
+tokio-util = { version = "0.7.17", features = ["io"] }
+futures-util = "0.3.31"
 
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-args=-Wl,-application_extension"]

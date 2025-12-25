@@ -93,12 +93,16 @@ impl ApiClient {
         Ok(health_response)
     }
 
-    pub async fn upload_photo(
+    pub async fn upload_photo<F>(
         &self,
         event_code: &str,
         file_path: &Path,
         api_key: &str,
-    ) -> Result<UploadResponse, ApiError> {
+        on_progress: F,
+    ) -> Result<UploadResponse, ApiError>
+    where
+        F: Fn(f32) + Send + Sync + 'static,
+    {
         println!("🚀 ApiClient::upload_photo called");
         println!("📡 URL: {}/api/gallery/{}/photos", self.base_url.trim_end_matches('/'), event_code);
         println!("📁 File path: {}", file_path.display());
@@ -122,11 +126,31 @@ impl ApiClient {
         let file_name_clone = file_name.clone();
         let file_path_str = file_path.to_string_lossy().to_string();
 
-        println!("📖 Reading file: {} (size: unknown)", file_name);
-        let file_content = tokio::fs::read(file_path).await?;
-        println!("✅ File read successfully, size: {} bytes", file_content.len());
+        println!("📖 Opening file: {}", file_name);
+        let file = tokio::fs::File::open(file_path).await?;
+        let metadata = file.metadata().await?;
+        let total_size = metadata.len();
+        println!("✅ File opened successfully, size: {} bytes", total_size);
 
-        let file_part = multipart::Part::bytes(file_content)
+        // Create a stream for the file
+        let reader_stream = tokio_util::io::ReaderStream::new(file);
+        
+        // Wrap the stream to track progress
+        let mut uploaded = 0u64;
+        let async_stream = futures_util::stream::StreamExt::map(reader_stream, move |chunk| {
+            if let Ok(bytes) = &chunk {
+                uploaded += bytes.len() as u64;
+                let progress = if total_size > 0 {
+                    uploaded as f32 / total_size as f32
+                } else {
+                    0.0
+                };
+                on_progress(progress);
+            }
+            chunk
+        });
+
+        let file_part = multipart::Part::stream(reqwest::Body::wrap_stream(async_stream))
             .file_name(file_name)
             .mime_str("image/jpeg")?; // We'll assume JPEG for now, could be enhanced
 
